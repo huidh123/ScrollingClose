@@ -188,6 +188,9 @@ public class ScrollCloseActivity extends Activity {
         }
     }
 
+    /**
+     * RootView的触摸代理
+     */
     private class DecorDelegate extends TouchDelegate {
 
         public DecorDelegate(Rect bounds, View delegateView) {
