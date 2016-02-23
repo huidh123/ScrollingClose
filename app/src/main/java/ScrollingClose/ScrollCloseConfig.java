@@ -10,5 +10,4 @@ public class ScrollCloseConfig {
     public int AUTO_SWITCH_VALUE = 300;
     //动画播放毫秒数
     public int ANIME_DURATION = 200;
-
 }
