@@ -40,6 +40,9 @@ public class ScrollCloseActivity extends Activity {
     //ScrollActivity相关配置信息
     private ScrollCloseConfig mCloseConfig;
 
+    private ObjectAnimator closeAnima;
+    private ObjectAnimator resetAnima;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -63,20 +66,69 @@ public class ScrollCloseActivity extends Activity {
         //获取边界范围,会进行处理使得区域变小，可以触发边缘拖动
         mRootViewRect = ViewUtils.getViewRect(mRootView,mCloseConfig.EGDE_TRIGGER_WIDTH);
         mRootView.setTouchDelegate(new DecorDelegate(mRootViewRect,mRootView));
+
+        initAnimation(mRootView);
         isInitOK = true;
         return true;
     }
 
-    private class DecorDelegate extends TouchDelegate {
+    private void initAnimation(View animaView){
+        closeAnima = ObjectAnimator.ofFloat(animaView,"rate",0.0f,1.0f);
+        closeAnima.setDuration(mCloseConfig.ANIME_DURATION);
+        closeAnima.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                //在关闭动画完成之后，调用realCloseActivity关闭Activity
+                realCloseActivity();
+            }
+        });
+        resetAnima = ObjectAnimator.ofFloat(animaView,"rate",1.0f,0.0f);
+        resetAnima.setDuration(mCloseConfig.ANIME_DURATION);
+    }
 
-        public DecorDelegate(Rect bounds, View delegateView) {
-            super(bounds, delegateView);
+    /**
+     * 执行Activity的关闭操作
+     */
+    private void realCloseActivity(){
+        this.finish();
+    }
+
+    /**
+     * 重置Activity位移，当未移动超过阈值的时候
+     * @param left 发生位移的距离
+     * @param top 发生位移的距离
+     */
+    private void resetRootView(final int left, int top){
+        if(isInitOK){
+            resetAnima.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animation) {
+                    float rate = (float) animation.getAnimatedValue("rate");
+                    ((View)((ObjectAnimator)animation).getTarget()).setLeft((int) (left * rate));
+                }
+            });
+            resetAnima.start();
+            //重置View的位置
+            mViewDragHelper.getCapturedView().offsetLeftAndRight(-left);
         }
+    }
 
-        @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            mViewDragHelper.processTouchEvent(event);
-            return true;
+    /**
+     * 关闭Activity
+     * @param left 发生位移的距离
+     * @param top 发生位移的距离
+     */
+    private void closeActivity(final int left, int top){
+        if(isInitOK){
+            closeAnima.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animation) {
+                    float rate = (float) animation.getAnimatedValue("rate");
+                    ((View)((ObjectAnimator)animation).getTarget()).setLeft((int) ((ScreenWidth - left) * rate));
+                }
+            });
+            closeAnima.start();
         }
     }
 
@@ -96,10 +148,10 @@ public class ScrollCloseActivity extends Activity {
         @Override
         public int clampViewPositionHorizontal(View child, int left, int dx) {
             //只有当边缘滑动时才触发事件
-            if(isEdgeTouched){
-                return left;
+            if(!isEdgeTouched){
+                return 0;
             }
-            return 0;
+            return left;
         }
 
         @Override
@@ -110,7 +162,9 @@ public class ScrollCloseActivity extends Activity {
         @Override
         public void onEdgeTouched(int edgeFlags, int pointerId) {
             super.onEdgeTouched(edgeFlags, pointerId);
-            isEdgeTouched = true;
+            if(edgeFlags == ViewDragHelper.EDGE_LEFT){
+                isEdgeTouched = true;
+            }
         }
 
         @Override
@@ -120,58 +174,30 @@ public class ScrollCloseActivity extends Activity {
             if(!isEdgeTouched){
                 return;
             }
-            //判断是否超过位移边界，然后进行进行状态处理
-            LogUtils.log(this,"X轴位移："+mScrollX);
-            //判断当前RootView位移是否超过了阈值
-            if(mViewDragHelper.getCapturedView().getLeft() >= mCloseConfig.AUTO_SWITCH_VALUE){
-                closeActivity();
-            }else{
-                resetRootView();
-            }
             //当滑动手势结束之后，清除是否点击标志位
             isEdgeTouched = false;
-        }
-    }
-
-    /**
-     * 重置Activity位移，当未移动超过阈值的时候
-     */
-    private void resetRootView(){
-        if(isInitOK){
-            getResetAnimation().start();
-        }
-    }
-
-    /**
-     * 关闭Activity
-     */
-    private void closeActivity(){
-        if(isInitOK){
-            getResetAnimation().start();
-            this.finish();
-        }
-    }
-
-    public ObjectAnimator getResetAnimation(){
-        final int left = mViewDragHelper.getCapturedView().getLeft();
-        ObjectAnimator resetAnima = ObjectAnimator.ofFloat(mRootView,"rate",0.0f,1.0f);
-        resetAnima.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-            @Override
-            public void onAnimationUpdate(ValueAnimator animation) {
-                float rate = (float) animation.getAnimatedValue("rate");
-                LogUtils.log(this,(int) (left * rate)+"");
-                mRootView.setLeft(-(int) (left * rate));
+            //判断是否超过位移边界，然后进行进行状态处理
+            int moveLeft = mViewDragHelper.getCapturedView().getLeft();
+            int moveTop = mViewDragHelper.getCapturedView().getTop();
+            //判断当前RootView位移是否超过了阈值
+            if(moveLeft >= mCloseConfig.AUTO_SWITCH_VALUE){
+                closeActivity(moveLeft,moveTop);
+            }else{
+                resetRootView(moveLeft,moveTop);
             }
-        });
-        resetAnima.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                super.onAnimationEnd(animation);
-                //当动画播放完成时候重置RootView
-                mViewDragHelper.settleCapturedViewAt(mAutoBackPoint.x,mAutoBackPoint.y);
-            }
-        });
-        resetAnima.setDuration(500);
-        return resetAnima;
+        }
+    }
+
+    private class DecorDelegate extends TouchDelegate {
+
+        public DecorDelegate(Rect bounds, View delegateView) {
+            super(bounds, delegateView);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            mViewDragHelper.processTouchEvent(event);
+            return true;
+        }
     }
 }
